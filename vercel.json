@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/handler", "dest": "/api/handler.js" },
+    { "src": "/get", "dest": "/api/get.js" },
+    { "src": "/render", "dest":"/api/render.js"}
+  ],
+  "crons": [
+    {
+      "path": "/api/c2fzumcyqthmnzia3zxf2phv5gy32vuc.js",
+      "schedule": "0 13 * * *"
+    }
+  ]
+}
