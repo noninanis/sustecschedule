@@ -2,199 +2,213 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { waitUntil } from "@vercel/functions";
 
-// LRU кэш для лучшей производительности
-class LRUCache {
-    constructor(maxSize = 100) {
-        this.maxSize = maxSize;
-        this.cache = new Map();
-    }
-    
-    get(key) {
-        if (!this.cache.has(key)) return null;
-        
-        const value = this.cache.get(key);
-        // Перемещаем в конец (самый недавний)
-        this.cache.delete(key);
-        this.cache.set(key, value);
-        return value;
-    }
-    
-    set(key, value) {
-        if (this.cache.has(key)) {
-            this.cache.delete(key);
-        } else if (this.cache.size >= this.maxSize) {
-            // Удаляем самый старый элемент
-            const firstKey = this.cache.keys().next().value;
-            this.cache.delete(firstKey);
-        }
-        this.cache.set(key, value);
-    }
-}
-
-const pdfCache = new LRUCache(50);
-const CACHE_TTL = 300000; // 5 минут
+// Простой кэш
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
 
 async function getPDFstatus() {
     const baseUrl = `https://${process.env.COLLEGE_ENDPOINT_URL}`;
-    const cacheKey = `pdf-${Buffer.from(baseUrl).toString('base64').slice(0, 20)}`;
+    const cacheKey = `pdf-${Buffer.from(baseUrl).toString('base64')}`;
     
     // Проверяем кэш
-    const cached = pdfCache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        console.log('Returning cached PDF results');
         return cached.data;
     }
 
     try {
-        // Быстро получаем HTML
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        console.time('PDF scan');
         
+        // 1. Получаем HTML страницы
         const { data } = await axios.get(baseUrl, {
-            timeout: 8000,
-            signal: controller.signal,
+            timeout: 10000,
             headers: {
-                'User-Agent': 'Mozilla/5.0',
-                'Accept-Encoding': 'gzip, deflate, br',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
-        
-        clearTimeout(timeoutId);
 
         const $ = cheerio.load(data);
         
-        // Эффективно извлекаем ссылки
-        const urlSet = new Set();
-        const pdfFiles = [];
+        // 2. Извлекаем все PDF ссылки
+        const linksMap = new Map();
         
-        // Используем более специфичные селекторы для скорости
-        $('a[href]').each((_, el) => {
-            const href = $(el).attr('href');
-            if (!href || !href.includes('.pdf')) return;
-            
+        $('a[href*=".pdf"]').each((_, el) => {
             try {
-                let fullUrl;
+                const href = $(el).attr('href');
+                if (!href) return;
                 
-                if (href.startsWith('/')) {
-                    const origin = new URL(baseUrl).origin;
-                    fullUrl = origin + href;
-                } else if (href.startsWith('http')) {
-                    fullUrl = href;
-                } else if (href.startsWith('//')) {
-                    fullUrl = 'https:' + href;
+                let fullUrl;
+                const cleanHref = href.trim();
+                
+                // Нормализуем URL
+                if (cleanHref.startsWith('http')) {
+                    fullUrl = cleanHref;
+                } else if (cleanHref.startsWith('//')) {
+                    fullUrl = 'https:' + cleanHref;
+                } else if (cleanHref.startsWith('/')) {
+                    const urlObj = new URL(baseUrl);
+                    fullUrl = urlObj.origin + cleanHref;
                 } else {
-                    fullUrl = new URL(href, baseUrl).href;
+                    fullUrl = new URL(cleanHref, baseUrl).href;
                 }
                 
+                // Принудительно используем https
                 fullUrl = fullUrl.replace('http://', 'https://');
                 
-                // Убираем дубликаты по URL
-                if (!urlSet.has(fullUrl)) {
-                    urlSet.add(fullUrl);
-                    
-                    const fileName = fullUrl.split('/').pop().toLowerCase();
-                    if (fileName.endsWith('.pdf')) {
-                        pdfFiles.push({
-                            url: fullUrl,
-                            name: fileName
-                        });
-                    }
+                // Извлекаем имя файла
+                const urlObj = new URL(fullUrl);
+                const fileName = urlObj.pathname.split('/').pop().toLowerCase();
+                
+                // Проверяем что это PDF
+                if (!fileName.endsWith('.pdf')) return;
+                
+                // Сохраняем только если это новый файл
+                if (!linksMap.has(fileName)) {
+                    linksMap.set(fileName, {
+                        url: fullUrl,
+                        name: fileName
+                    });
                 }
-            } catch {
+                
+            } catch (error) {
                 // Пропускаем некорректные URL
             }
         });
-
-        // Быстрая валидация самых вероятных файлов (первые 30)
-        const filesToCheck = pdfFiles.slice(0, 30);
-        const validFiles = [];
         
-        // Создаем промисы для проверки
-        const checkPromises = filesToCheck.map(async (file, index) => {
+        console.log(`Found ${linksMap.size} potential PDF files`);
+
+        // 3. Проверяем существование файлов
+        const existingFiles = [];
+        const linkEntries = Array.from(linksMap.values());
+        
+        // Создаем промисы для проверки файлов
+        const checkPromises = linkEntries.map(async (file) => {
             try {
-                // Небольшая задержка для распределения нагрузки
-                if (index > 0) {
-                    await new Promise(resolve => setTimeout(resolve, index * 10));
-                }
-                
+                // Быстрая проверка через HEAD запрос
                 const response = await axios.head(file.url, {
-                    timeout: 2000,
-                    maxRedirects: 1,
-                    validateStatus: status => status === 200,
-                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                    timeout: 3000,
+                    maxRedirects: 2,
+                    validateStatus: (status) => status === 200
                 });
                 
-                const size = parseInt(response.headers['content-length']) || 0;
-                if (size > 0) {
-                    return {
-                        ...file,
-                        size: size,
-                        sizeKB: Math.round(size / 1024)
-                    };
+                // Проверяем что это PDF
+                const contentType = response.headers['content-type'] || '';
+                if (!contentType.includes('pdf') && !contentType.includes('application/pdf')) {
+                    return null;
                 }
-            } catch {
+                
+                const size = parseInt(response.headers['content-length']) || 0;
+                
+                return {
+                    ...file,
+                    size: size,
+                    sizeKB: Math.round(size / 1024),
+                    lastModified: response.headers['last-modified'] || null,
+                    status: 200
+                };
+                
+            } catch (error) {
+                // Файл не существует
                 return null;
             }
         });
 
-        // Параллельная проверка
+        // Выполняем все проверки параллельно
         const results = await Promise.allSettled(checkPromises);
         
+        // Обрабатываем результаты
         results.forEach(result => {
             if (result.status === 'fulfilled' && result.value) {
-                validFiles.push(result.value);
+                existingFiles.push(result.value);
             }
         });
 
-        // Подготавливаем результат
-        const result = {
-            files: validFiles,
-            totalFound: pdfFiles.length,
-            validCount: validFiles.length,
-            scannedAt: new Date().toISOString()
-        };
+        // 4. Подготавливаем результат
+        const result = existingFiles
+            .filter(file => file.size > 0)
+            .sort((a, b) => b.size - a.size)
+            .map(file => ({
+                url: file.url,
+                name: file.name,
+                size: file.size,
+                sizeKB: file.sizeKB,
+                lastModified: file.lastModified
+            }));
 
-        // Кэшируем результат
+        console.timeEnd('PDF scan');
+        console.log(`Found ${result.length} valid PDF files`);
+
+        // 5. Сохраняем в кэш
         const cacheData = {
             data: result,
             timestamp: Date.now()
         };
         
-        pdfCache.set(cacheKey, cacheData);
+        cache.set(cacheKey, cacheData);
         
-        // Используем waitUntil для фоновых задач
-        waitUntil(async () => {
-            try {
-                const now = Date.now();
-                for (const [key, value] of pdfCache.cache.entries()) {
-                    if (now - value.timestamp > CACHE_TTL * 3) {
-                        pdfCache.cache.delete(key);
+        // 6. Используем waitUntil для фоновой очистки кэша (как в примере)
+        waitUntil(
+            Promise.all([
+                // Очищаем старый кэш в фоне
+                (async () => {
+                    try {
+                        const now = Date.now();
+                        const keysToDelete = [];
+                        
+                        for (const [key, value] of cache.entries()) {
+                            if (now - value.timestamp > CACHE_TTL * 2) {
+                                keysToDelete.push(key);
+                            }
+                        }
+                        
+                        // Удаляем старые записи
+                        keysToDelete.forEach(key => cache.delete(key));
+                        
+                        if (keysToDelete.length > 0) {
+                            console.log(`Cleaned up ${keysToDelete.length} old cache entries`);
+                        }
+                    } catch (error) {
+                        console.error('Cache cleanup error:', error);
                     }
-                }
-            } catch (error) {
-                // Игнорируем ошибки в фоновых задачах
-            }
-        });
+                })(),
+                
+                // Можно добавить другие фоновые задачи
+                (async () => {
+                    try {
+                        // Дополнительная фоновая обработка если нужно
+                        // Например, логирование статистики
+                        if (result.length > 0) {
+                            const totalSize = result.reduce((sum, file) => sum + file.size, 0);
+                            console.log(`Total PDF size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+                        }
+                    } catch (error) {
+                        // Игнорируем ошибки в фоновых задачах
+                    }
+                })()
+            ]).catch(error => {
+                console.error('Background tasks error:', error);
+            })
+        );
 
         return result;
         
     } catch (error) {
-        console.error('PDF scan error:', error.message);
+        console.error('Error in getPDFstatus:', error.message);
         
-        // Пробуем вернуть старый кэш если есть
-        const cached = pdfCache.get(cacheKey);
+        // Пробуем вернуть старые кэшированные данные
+        const cached = cache.get(cacheKey);
         if (cached) {
+            console.log('Returning stale cache due to error');
             return cached.data;
         }
         
-        return {
-            files: [],
-            totalFound: 0,
-            validCount: 0,
-            error: error.message,
-            scannedAt: new Date().toISOString()
-        };
+        // Всегда возвращаем массив
+        return [];
     }
 }
+
+
 
 async function sendRequestRender(chat_id,pdfLinks){
     waitUntil(
