@@ -3,8 +3,8 @@ import * as cheerio from "cheerio";
 import { waitUntil } from "@vercel/functions";
 
 async function getPDFstatus() {
-    const url = `https://${process.env.COLLEGE_ENDPOINT_URL}`;
-    const { data } = await axios.get(url);
+    const baseUrl = `https://${process.env.COLLEGE_ENDPOINT_URL}`;
+    const { data } = await axios.get(baseUrl);
     const $ = cheerio.load(data);
 
     const uniquePDFs = new Set();
@@ -12,12 +12,15 @@ async function getPDFstatus() {
     
     $("a").each((_, el) => {
         const href = $(el).attr("href");
-        if (href && href.endsWith(".pdf")) {
-            const fileName = href.split('/').pop();
+        if (href && /\.pdf$/i.test(href)) {
+            const fileName = href.split('/').pop().toLowerCase();
             
             if (!uniquePDFs.has(fileName)) {
                 uniquePDFs.add(fileName);
-                pdfLinks.push(href);
+                
+                // Используем URL для разрешения относительных путей
+                const fullUrl = new URL(href, baseUrl).href;
+                pdfLinks.push(fullUrl);
             }
         }
     });
