@@ -2,213 +2,212 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { waitUntil } from "@vercel/functions";
 
-// Простой кэш
-const cache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const cache = {};
 
-async function getPDFstatus() {
-    const baseUrl = `https://${process.env.COLLEGE_ENDPOINT_URL}`;
-    const cacheKey = `pdf-${Buffer.from(baseUrl).toString('base64')}`;
-    
-    // Проверяем кэш
-    const cached = cache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        console.log('Returning cached PDF results');
-        return cached.data;
+function normalizeUrl(href, baseUrl) {
+    // Защита от некорректных данных
+    if (!href) return null;
+    if (typeof href !== 'string') {
+        console.warn('Href is not a string:', typeof href, href);
+        return null;
     }
-
+    
+    const cleanHref = href.trim();
+    if (!cleanHref) return null;
+    
     try {
-        console.time('PDF scan');
+        // Удаляем якоря и параметры для базового сравнения
+        const hrefWithoutHash = cleanHref.split('#')[0];
         
-        // 1. Получаем HTML страницы
-        const { data } = await axios.get(baseUrl, {
-            timeout: 10000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-
-        const $ = cheerio.load(data);
+        let result;
         
-        // 2. Извлекаем все PDF ссылки
-        const linksMap = new Map();
+        if (hrefWithoutHash.startsWith('http://') || hrefWithoutHash.startsWith('https://')) {
+            result = hrefWithoutHash;
+        } else if (hrefWithoutHash.startsWith('//')) {
+            result = 'https:' + hrefWithoutHash;
+        } else if (hrefWithoutHash.startsWith('/')) {
+            const base = new URL(baseUrl);
+            result = base.origin + hrefWithoutHash;
+        } else {
+            result = new URL(hrefWithoutHash, baseUrl).href;
+        }
         
-        $('a[href*=".pdf"]').each((_, el) => {
-            try {
-                const href = $(el).attr('href');
-                if (!href) return;
-                
-                let fullUrl;
-                const cleanHref = href.trim();
-                
-                // Нормализуем URL
-                if (cleanHref.startsWith('http')) {
-                    fullUrl = cleanHref;
-                } else if (cleanHref.startsWith('//')) {
-                    fullUrl = 'https:' + cleanHref;
-                } else if (cleanHref.startsWith('/')) {
-                    const urlObj = new URL(baseUrl);
-                    fullUrl = urlObj.origin + cleanHref;
-                } else {
-                    fullUrl = new URL(cleanHref, baseUrl).href;
-                }
-                
-                // Принудительно используем https
-                fullUrl = fullUrl.replace('http://', 'https://');
-                
-                // Извлекаем имя файла
-                const urlObj = new URL(fullUrl);
-                const fileName = urlObj.pathname.split('/').pop().toLowerCase();
-                
-                // Проверяем что это PDF
-                if (!fileName.endsWith('.pdf')) return;
-                
-                // Сохраняем только если это новый файл
-                if (!linksMap.has(fileName)) {
-                    linksMap.set(fileName, {
-                        url: fullUrl,
-                        name: fileName
-                    });
-                }
-                
-            } catch (error) {
-                // Пропускаем некорректные URL
-            }
-        });
+        // Приводим к https
+        result = result.replace('http://', 'https://');
         
-        console.log(`Found ${linksMap.size} potential PDF files`);
-
-        // 3. Проверяем существование файлов
-        const existingFiles = [];
-        const linkEntries = Array.from(linksMap.values());
-        
-        // Создаем промисы для проверки файлов
-        const checkPromises = linkEntries.map(async (file) => {
-            try {
-                // Быстрая проверка через HEAD запрос
-                const response = await axios.head(file.url, {
-                    timeout: 3000,
-                    maxRedirects: 2,
-                    validateStatus: (status) => status === 200
-                });
-                
-                // Проверяем что это PDF
-                const contentType = response.headers['content-type'] || '';
-                if (!contentType.includes('pdf') && !contentType.includes('application/pdf')) {
-                    return null;
-                }
-                
-                const size = parseInt(response.headers['content-length']) || 0;
-                
-                return {
-                    ...file,
-                    size: size,
-                    sizeKB: Math.round(size / 1024),
-                    lastModified: response.headers['last-modified'] || null,
-                    status: 200
-                };
-                
-            } catch (error) {
-                // Файл не существует
-                return null;
-            }
-        });
-
-        // Выполняем все проверки параллельно
-        const results = await Promise.allSettled(checkPromises);
-        
-        // Обрабатываем результаты
-        results.forEach(result => {
-            if (result.status === 'fulfilled' && result.value) {
-                existingFiles.push(result.value);
-            }
-        });
-
-        // 4. Подготавливаем результат
-        const result = existingFiles
-            .filter(file => file.size > 0)
-            .sort((a, b) => b.size - a.size)
-            .map(file => ({
-                url: file.url,
-                name: file.name,
-                size: file.size,
-                sizeKB: file.sizeKB,
-                lastModified: file.lastModified
-            }));
-
-        console.timeEnd('PDF scan');
-        console.log(`Found ${result.length} valid PDF files`);
-
-        // 5. Сохраняем в кэш
-        const cacheData = {
-            data: result,
-            timestamp: Date.now()
-        };
-        
-        cache.set(cacheKey, cacheData);
-        
-        // 6. Используем waitUntil для фоновой очистки кэша (как в примере)
-        waitUntil(
-            Promise.all([
-                // Очищаем старый кэш в фоне
-                (async () => {
-                    try {
-                        const now = Date.now();
-                        const keysToDelete = [];
-                        
-                        for (const [key, value] of cache.entries()) {
-                            if (now - value.timestamp > CACHE_TTL * 2) {
-                                keysToDelete.push(key);
-                            }
-                        }
-                        
-                        // Удаляем старые записи
-                        keysToDelete.forEach(key => cache.delete(key));
-                        
-                        if (keysToDelete.length > 0) {
-                            console.log(`Cleaned up ${keysToDelete.length} old cache entries`);
-                        }
-                    } catch (error) {
-                        console.error('Cache cleanup error:', error);
-                    }
-                })(),
-                
-                // Можно добавить другие фоновые задачи
-                (async () => {
-                    try {
-                        // Дополнительная фоновая обработка если нужно
-                        // Например, логирование статистики
-                        if (result.length > 0) {
-                            const totalSize = result.reduce((sum, file) => sum + file.size, 0);
-                            console.log(`Total PDF size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
-                        }
-                    } catch (error) {
-                        // Игнорируем ошибки в фоновых задачах
-                    }
-                })()
-            ]).catch(error => {
-                console.error('Background tasks error:', error);
-            })
-        );
-
+        // Проверяем валидность
+        new URL(result);
         return result;
         
     } catch (error) {
-        console.error('Error in getPDFstatus:', error.message);
-        
-        // Пробуем вернуть старые кэшированные данные
-        const cached = cache.get(cacheKey);
-        if (cached) {
-            console.log('Returning stale cache due to error');
-            return cached.data;
-        }
-        
-        // Всегда возвращаем массив
-        return [];
+        console.warn('Invalid URL:', cleanHref, error.message);
+        return null;
     }
 }
 
+async function getPDFstatus() {
+    const baseUrl = `https://${process.env.COLLEGE_ENDPOINT_URL}`;
+    
+    try {
+        // Проверяем валидность baseUrl
+        new URL(baseUrl);
+    } catch (error) {
+        console.error('Invalid base URL:', baseUrl);
+        return [];
+    }
+    
+    const now = Date.now();
+    
+    // Кэш
+    if (cache[baseUrl] && now - cache[baseUrl].timestamp < 300000) {
+        return cache[baseUrl].data;
+    }
 
+    try {
+        // Загружаем страницу
+        const response = await axios.get(baseUrl, {
+            timeout: 15000,
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        
+        const $ = cheerio.load(response.data);
+        
+        // Ищем PDF ссылки
+        const pdfLinks = [];
+        const seenUrls = new Set();
+        
+        // Используем более безопасный подход
+        const links = $('a[href]');
+        console.log(`Found ${links.length} total links on page`);
+        
+        for (let i = 0; i < links.length; i++) {
+            const href = $(links[i]).attr('href');
+            
+            // Базовая проверка
+            if (!href || typeof href !== 'string') continue;
+            
+            // Проверяем расширение (без учета регистра)
+            if (!/\.pdf$/i.test(href)) continue;
+            
+            // Создаем абсолютный URL
+            const fullUrl = normalizeUrl(href, baseUrl);
+            if (!fullUrl) continue;
+            
+            // Проверяем уникальность
+            if (seenUrls.has(fullUrl)) continue;
+            seenUrls.add(fullUrl);
+            
+            // Извлекаем имя файла
+            let fileName = 'unknown.pdf';
+            try {
+                const urlObj = new URL(fullUrl);
+                fileName = urlObj.pathname.split('/').pop().toLowerCase() || 'unknown.pdf';
+            } catch {
+                // Используем часть из URL
+                const parts = fullUrl.split('/');
+                fileName = parts[parts.length - 1].toLowerCase() || 'unknown.pdf';
+            }
+            
+            // Убеждаемся что это PDF
+            if (!fileName.endsWith('.pdf')) {
+                fileName = fileName + '.pdf';
+            }
+            
+            pdfLinks.push({
+                url: fullUrl,
+                name: fileName,
+                originalHref: href
+            });
+        }
+        
+        console.log(`Found ${pdfLinks.length} PDF candidates`);
+        
+        // Проверяем доступность файлов
+        const validFiles = [];
+        
+        // Ограничиваем параллельные запросы
+        const batchSize = 5;
+        for (let i = 0; i < pdfLinks.length; i += batchSize) {
+            const batch = pdfLinks.slice(i, i + batchSize);
+            const batchPromises = batch.map(async (file) => {
+                try {
+                    const headResponse = await axios.head(file.url, {
+                        timeout: 5000,
+                        validateStatus: (status) => status < 400
+                    });
+                    
+                    // Проверяем что это PDF
+                    const contentType = headResponse.headers['content-type'] || '';
+                    const isPdf = contentType.includes('pdf') || 
+                                 contentType.includes('application/pdf') ||
+                                 file.name.endsWith('.pdf');
+                    
+                    if (!isPdf) return null;
+                    
+                    const size = parseInt(headResponse.headers['content-length']) || 0;
+                    
+                    return {
+                        url: file.url,
+                        name: file.name,
+                        size: size,
+                        sizeKB: Math.round(size / 1024),
+                        status: headResponse.status,
+                        lastModified: headResponse.headers['last-modified'] || null
+                    };
+                    
+                } catch (error) {
+                    // Файл недоступен
+                    return null;
+                }
+            });
+            
+            const batchResults = await Promise.allSettled(batchPromises);
+            
+            for (const result of batchResults) {
+                if (result.status === 'fulfilled' && result.value) {
+                    validFiles.push(result.value);
+                }
+            }
+            
+            // Задержка между батчами
+            if (i + batchSize < pdfLinks.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+        
+        console.log(`Found ${validFiles.length} accessible PDF files`);
+        
+        // Кэшируем результат
+        cache[baseUrl] = {
+            data: validFiles,
+            timestamp: now
+        };
+        
+        // Фоновая очистка кэша
+        waitUntil(
+            (async () => {
+                try {
+                    const cleanupTime = Date.now();
+                    for (const key in cache) {
+                        if (cleanupTime - cache[key].timestamp > 600000) {
+                            delete cache[key];
+                        }
+                    }
+                } catch (error) {
+                    // Игнорируем ошибки очистки
+                }
+            })()
+        );
+        
+        return validFiles;
+        
+    } catch (error) {
+        console.error('PDF scan failed:', error.message);
+        
+        // Возвращаем кэш если есть
+        return cache[baseUrl]?.data || [];
+    }
+}
 
 async function sendRequestRender(chat_id,pdfLinks){
     waitUntil(
