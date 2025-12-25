@@ -7,23 +7,58 @@ async function getPDFstatus() {
     const { data } = await axios.get(baseUrl);
     const $ = cheerio.load(data);
 
-    const uniquePDFs = new Set();
     const pdfLinks = [];
+    const fileSizes = new Set(); // Храним уникальные размеры файлов
     
+    // Сначала собираем все PDF ссылки
+    const allLinks = [];
     $("a").each((_, el) => {
         const href = $(el).attr("href");
         if (href && /\.pdf$/i.test(href)) {
-            const fileName = href.split('/').pop().toLowerCase();
-            
-            if (!uniquePDFs.has(fileName)) {
-                uniquePDFs.add(fileName);
-                
-                // Используем URL для разрешения относительных путей
-                const fullUrl = new URL(href, baseUrl).href;
-                pdfLinks.push(fullUrl);
-            }
+            const fullUrl = new URL(href, baseUrl).href;
+            allLinks.push(fullUrl);
         }
     });
+
+    // Проверяем каждый файл
+    for (const link of allLinks) {
+        try {
+            // Получаем заголовки файла без скачивания всего содержимого
+            const headResponse = await axios.head(link, {
+                timeout: 5000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
+            
+            const contentLength = headResponse.headers['content-length'];
+            const fileName = link.split('/').pop().toLowerCase();
+            
+            if (contentLength) {
+                // Создаем уникальный ключ: размер + имя файла (или только размер)
+                const fileKey = `${contentLength}_${fileName}`;
+                // Или только по размеру: const fileKey = contentLength;
+                
+                if (!fileSizes.has(fileKey)) {
+                    fileSizes.add(fileKey);
+                    pdfLinks.push({
+                        url: link,
+                        name: fileName,
+                        size: parseInt(contentLength)
+                    });
+                }
+            } else {
+                // Если размер неизвестен, добавляем файл
+                pdfLinks.push({
+                    url: link,
+                    name: link.split('/').pop().toLowerCase(),
+                    size: 0
+                });
+            }
+        } catch (error) {
+            console.warn(`Не удалось проверить файл ${link}:`, error.message);
+        }
+    }
 
     return pdfLinks;
 }
