@@ -2,15 +2,24 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { waitUntil } from "@vercel/functions";
 
-async function getPDFstatus(){
+async function getPDFstatus() {
     const url = `https://${process.env.COLLEGE_ENDPOINT_URL}`;
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
 
+    const uniquePDFs = new Set();
     const pdfLinks = [];
+    
     $("a").each((_, el) => {
-      const href = $(el).attr("href");
-      if (href && href.endsWith(".pdf")) pdfLinks.push(href);
+        const href = $(el).attr("href");
+        if (href && href.endsWith(".pdf")) {
+            const fileName = href.split('/').pop();
+            
+            if (!uniquePDFs.has(fileName)) {
+                uniquePDFs.add(fileName);
+                pdfLinks.push(href);
+            }
+        }
     });
 
     return pdfLinks;
