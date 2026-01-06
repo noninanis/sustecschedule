@@ -1,5 +1,5 @@
 import db from './db.js';
-import { getRedis } from './redis-client';
+import { getRedis } from './redis-client.js';
 /**
  * Парсит username или ID из строки
  * @param {string} input - Входная строка (может быть: 123456, @username, username)

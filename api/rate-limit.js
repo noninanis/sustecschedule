@@ -1,4 +1,4 @@
-import { getRedis } from './redis-client';
+import { getRedis } from './redis-client.js';
 
 export async function checkRateLimit(userId, action = 'message', limit = 30) {
   const redis = await getRedis();
