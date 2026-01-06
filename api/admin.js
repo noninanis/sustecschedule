@@ -55,9 +55,7 @@ class AdminManager {
   async syncFromDB() {
     try {
       const redis = await this.getRedis();
-      const result = await db.query(
-        'SELECT id FROM users WHERE admin = true AND deleted_at IS NULL'
-      );
+      const result = await db.getAllAdmins();
       
       if (result.rows.length > 0) {
         const pipeline = redis.multi();
@@ -119,10 +117,7 @@ class AdminManager {
   async addAdmin(userId) {
     try {
       // 1. Обновляем БД
-      await db.query(
-        'UPDATE users SET admin = true WHERE id = $1',
-        [userId]
-      );
+      await db.setAdminById(userId,true);
       
       // 2. Обновляем Redis
       const redis = await this.getRedis();
@@ -144,10 +139,7 @@ class AdminManager {
   async removeAdmin(userId) {
     try {
       // 1. Обновляем БД
-      await db.query(
-        'UPDATE users SET admin = false WHERE id = $1',
-        [userId]
-      );
+      await db.setAdminById(userId,false);
       
       // 2. Обновляем Redis
       const redis = await this.getRedis();

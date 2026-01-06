@@ -75,7 +75,21 @@ class Database {
     const res = await this.pool.query('SELECT * FROM groups ORDER BY added_at DESC');
     return res.rows;
   }
+  // === Админы ===
 
+  async getAllAdmins() {
+    const res = await this.pool.query('UPDATE users SET admin = true WHERE id = $1', [userId]);
+    return res.rows;
+  }
+
+  async getAdminById(id) {
+    const res = await this.pool.query('SELECT * FROM users WHERE id = $1 AND admin = true', [id]);
+    return res.rows[0] || null;
+  }
+  async setAdminById(status,id) {
+    const res = await this.pool.query('UPDATE users SET admin = $1 WHERE id = $2', [status, id]);
+    return res.rows[0] || null;
+  }
   // === Утилиты ===
 
   async toggleSubscription(ctx) {
