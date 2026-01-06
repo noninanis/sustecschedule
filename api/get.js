@@ -167,7 +167,7 @@ async function getPDFstatus() {
 }
 
 async function sendRequestRender(chat_id, pdfLinks) {
-    Promise.all(
+    await Promise.all(
         pdfLinks.map(pdfUrl =>
             fetch(`https://${process.env.WEBHOOK_URL}/render?chat_id=${chat_id}`, {
                 method: "POST",
@@ -206,7 +206,7 @@ async function SendRender(chat_id, res) {
     }
 }
 
-export default async function handler(req, res) {
+export default async function handler(req, res) {а
   if (req.method !== "GET") return res.status(405).send("Method Not Allowed");
   
   // Проверяем секретный токен для защиты от внешних вызовов

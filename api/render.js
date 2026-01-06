@@ -65,32 +65,37 @@ export default async function handler(req, res) {
     const pagesToRender = Math.min(2, pdf.numPages);
 
     // Параллельный рендеринг страниц
-    for (let i = 0; i < pagesToRender; i++) {
-      const pageNum = i + 1;
-      
-      try {
-        const page = await pdf.getPage(pageNum);
-        const content = await page.getTextContent();
-        
-        if (!content.items || content.items.length === 0) {
-          console.log(`Страница ${pageNum} пустая, пропускаю`);
-          continue;
-        }
-        
-        const imgBuffer = await renderPage(page);
-        await bot.telegram.sendPhoto(chat_id, { source: imgBuffer });
-        
-        // Прогресс
-        await ctx.reply(`✅ Страница ${pageNum}/${pagesToRender} отправлена`);
-        
-        // Задержка между сообщениями (100ms = 10/сек)
-        await new Promise(r => setTimeout(r, 100));
-        
-      } catch (error) {
-        console.error(`Ошибка на странице ${pageNum}:`, error.message);
-        await ctx.reply(`❌ Ошибка на странице ${pageNum}: ${error.message}`);
-      }
-    }
+    const results = await Promise.allSettled(
+      Array.from({ length: pagesToRender }, (_, i) =>
+        (async () => {
+          const pageNum = i + 1;
+          
+          try {
+            const page = await pdf.getPage(pageNum);
+            const content = await page.getTextContent();
+            
+            if (!content.items || content.items.length === 0) {
+              console.log(`📭 Страница ${pageNum} пустая, пропускаю`);
+              return { pageNum, status: 'empty' };
+            }
+            
+            const imgBuffer = await renderPage(page);
+            await bot.telegram.sendPhoto(chat_id, { source: imgBuffer });
+            
+            return { pageNum, status: 'success' };
+            
+          } catch (error) {
+            console.error(`❌ Страница ${pageNum} ошибка:`, error.message);
+            return { pageNum, status: 'error', error: error.message };
+          }
+        })()
+      )
+    );
+    const success = results.filter(r => r.value?.status === 'success').length;
+    const empty = results.filter(r => r.value?.status === 'empty').length;
+    const errors = results.filter(r => r.value?.status === 'error').length;
+    
+    console.log(`📊 Итог: ${success} успешно, ${empty} пустых, ${errors} ошибок`);
     res.status(200).json({ message: "PDF отправлен в Telegram" });
 
   } catch (err) {
