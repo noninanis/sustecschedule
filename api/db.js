@@ -80,29 +80,63 @@ class Database {
 
   async toggleSubscription(ctx) {
     const chat = ctx.chat;
-    if (!chat) return;
+    if (!chat) return null;
 
     const { id: chatId, type } = chat;
     
     try {
       if (type === 'group' || type === 'supergroup') {
-        await this.pool.query(
-          'UPDATE groups SET enable = NOT enable WHERE id = $1',
+        // Для групп
+        const result = await this.pool.query(
+          `UPDATE groups 
+           SET enable = NOT enable 
+           WHERE id = $1 
+           RETURNING enable`,
           [chatId]
         );
-      } else if (type === 'private') {
-        const userId = ctx.from?.id;
-        if (!userId) return;
         
-        await this.pool.query(
-          'UPDATE users SET status = NOT status WHERE id = $1',
+        if (result.rows.length === 0) {
+          // Группы нет в БД, создаем запись
+          await upsertGroup(ctx);
+          return { success: true, enabled: true, type: 'group', chatId };
+        }
+        
+        const enabled = result.rows[0].enable;
+        return enabled;
+        
+      } else if (type === 'private') {
+        // Для пользователей
+        const userId = ctx.from?.id;
+        if (!userId) return null;
+        
+        const result = await this.pool.query(
+          `UPDATE users 
+           SET status = NOT status 
+           WHERE id = $1 
+           RETURNING status`,
           [userId]
         );
+        
+        if (result.rows.length === 0) {
+          // Пользователя нет в БД, создаем
+          const insertResult = await this.pool.query(
+            `INSERT INTO users (id, status) 
+             VALUES ($1, true) 
+             RETURNING status`,
+            [userId]
+          );
+          return { success: true, subscribed: true, type: 'user', userId };
+        }
+        
+        const subscribed = result.rows[0].status;
+        return subscribed;
       }
-      return true;
+      
+      return null;
+      
     } catch (error) {
       console.error('Ошибка при обновлении статуса:', error);
-      return false;
+      return null;
     }
   }
 
