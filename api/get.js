@@ -206,7 +206,7 @@ async function SendRender(chat_id, res) {
     }
 }
 
-export default async function handler(req, res) {а
+export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).send("Method Not Allowed");
   
   // Проверяем секретный токен для защиты от внешних вызовов
