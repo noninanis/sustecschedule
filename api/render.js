@@ -52,9 +52,9 @@ export default async function handler(req, res) {
 
   // Проверяем секретный токен для защиты от внешних вызовов
   if (req.headers['protection-secret'] !== process.env.REQUEST_SECRET) {
+    console.error("protection-secret не передан или передан неверный!");
     return res.status(403).json({ message: 'Forbidden' });
   }
-
 
   const chat_id = req.query.chat_id;
   const { url } = req.body;
@@ -65,19 +65,32 @@ export default async function handler(req, res) {
     const pagesToRender = Math.min(2, pdf.numPages);
 
     // Параллельный рендеринг страниц
-    Promise.allSettled(
-      Array.from({ length: pagesToRender }, (_, i) =>
-        (async () => {
-          const pageNum = i + 1;
-          const page = await pdf.getPage(pageNum);
-          const content = await page.getTextContent();
-          if (!content.items || content.items.length === 0) return;
-
-          const imgBuffer = await renderPage(page);
-          await bot.telegram.sendPhoto(chat_id, { source: imgBuffer });
-        })()
-      )
-    );
+    for (let i = 0; i < pagesToRender; i++) {
+      const pageNum = i + 1;
+      
+      try {
+        const page = await pdf.getPage(pageNum);
+        const content = await page.getTextContent();
+        
+        if (!content.items || content.items.length === 0) {
+          console.log(`Страница ${pageNum} пустая, пропускаю`);
+          continue;
+        }
+        
+        const imgBuffer = await renderPage(page);
+        await bot.telegram.sendPhoto(chat_id, { source: imgBuffer });
+        
+        // Прогресс
+        await ctx.reply(`✅ Страница ${pageNum}/${pagesToRender} отправлена`);
+        
+        // Задержка между сообщениями (100ms = 10/сек)
+        await new Promise(r => setTimeout(r, 100));
+        
+      } catch (error) {
+        console.error(`Ошибка на странице ${pageNum}:`, error.message);
+        await ctx.reply(`❌ Ошибка на странице ${pageNum}: ${error.message}`);
+      }
+    }
     res.status(200).json({ message: "PDF отправлен в Telegram" });
 
   } catch (err) {
