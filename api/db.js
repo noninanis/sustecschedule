@@ -48,8 +48,12 @@ class Database {
     return res.rows[0] || null;
   };
 
-  // === GROUPS ===
+  async getUserByUsername(username) {
+    const res = await this.pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    return res.rows[0] || null;
+  };
 
+  // === GROUPS ===
   async upsertGroup(ctx) {
     const chat = ctx.chat;
     if (!chat || (chat.type !== 'group' && chat.type !== 'supergroup')) return;
@@ -73,6 +77,34 @@ class Database {
   }
 
   // === Утилиты ===
+
+  async toggleSubscription(ctx) {
+    const chat = ctx.chat;
+    if (!chat) return;
+
+    const { id: chatId, type } = chat;
+    
+    try {
+      if (type === 'group' || type === 'supergroup') {
+        await this.pool.query(
+          'UPDATE groups SET enable = NOT enable WHERE id = $1',
+          [chatId]
+        );
+      } else if (type === 'private') {
+        const userId = ctx.from?.id;
+        if (!userId) return;
+        
+        await this.pool.query(
+          'UPDATE users SET status = NOT status WHERE id = $1',
+          [userId]
+        );
+      }
+      return true;
+    } catch (error) {
+      console.error('Ошибка при обновлении статуса:', error);
+      return false;
+    }
+  }
 
   async close() {
     await this.pool.end();

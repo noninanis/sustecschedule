@@ -1,7 +1,7 @@
+// render.js
 import axios from "axios";
 import { Telegraf } from "telegraf";
 import { createCanvas } from "@napi-rs/canvas";
-import { waitUntil } from "@vercel/functions";
 import * as pdfjsLib from "./pdf.mjs";
 import path from "path";
 
@@ -9,9 +9,6 @@ const bot = new Telegraf(process.env.TELEGRAM_TOKEN_BOT);
 
 const standardFontsPath = path.join(process.cwd(), "standard_fonts");
 const cmapsPath = path.join(process.cwd(), "cmaps");
-
-console.log(standardFontsPath);
-console.log(cmapsPath);
 
 class NodeCanvasFactory {
   create(width, height) {
@@ -68,19 +65,17 @@ export default async function handler(req, res) {
     const pagesToRender = Math.min(2, pdf.numPages);
 
     // Параллельный рендеринг страниц
-    waitUntil(
-      Promise.allSettled(
-        Array.from({ length: pagesToRender }, (_, i) =>
-          (async () => {
-            const pageNum = i + 1;
-            const page = await pdf.getPage(pageNum);
-            const content = await page.getTextContent();
-            if (!content.items || content.items.length === 0) return;
+    Promise.allSettled(
+      Array.from({ length: pagesToRender }, (_, i) =>
+        (async () => {
+          const pageNum = i + 1;
+          const page = await pdf.getPage(pageNum);
+          const content = await page.getTextContent();
+          if (!content.items || content.items.length === 0) return;
 
-            const imgBuffer = await renderPage(page);
-            await bot.telegram.sendPhoto(chat_id, { source: imgBuffer });
-          })()
-        )
+          const imgBuffer = await renderPage(page);
+          await bot.telegram.sendPhoto(chat_id, { source: imgBuffer });
+        })()
       )
     );
     res.status(200).json({ message: "PDF отправлен в Telegram" });

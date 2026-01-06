@@ -1,6 +1,6 @@
+// get.js
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { waitUntil } from "@vercel/functions";
 
 const cache = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 минут
@@ -135,28 +135,26 @@ async function getPDFstatus() {
             timestamp: now
         };
 
-        // Фоновая очистка кэша через waitUntil
-        waitUntil(
-            (async () => {
-                try {
-                    const currentTime = Date.now();
-                    let cleaned = 0;
-                    
-                    for (const key in cache) {
-                        if (currentTime - cache[key].timestamp > CACHE_TTL * 2) {
-                            delete cache[key];
-                            cleaned++;
-                        }
+        // Фоновая очистка кэша
+        (async () => {
+            try {
+                const currentTime = Date.now();
+                let cleaned = 0;
+                
+                for (const key in cache) {
+                    if (currentTime - cache[key].timestamp > CACHE_TTL * 2) {
+                        delete cache[key];
+                        cleaned++;
                     }
-                    
-                    if (cleaned > 0) {
-                        console.log(`Cleaned ${cleaned} old cache entries`);
-                    }
-                } catch (error) {
-                    // Игнорируем ошибки очистки
                 }
-            })().catch(() => {})
-        );
+                
+                if (cleaned > 0) {
+                    console.log(`Cleaned ${cleaned} old cache entries`);
+                }
+            } catch (error) {
+                // Игнорируем ошибки очистки
+            }
+        })().catch(() => {});
 
         return validLinks;
         
@@ -169,18 +167,16 @@ async function getPDFstatus() {
 }
 
 async function sendRequestRender(chat_id, pdfLinks) {
-    waitUntil(
-        Promise.all(
-            pdfLinks.map(pdfUrl =>
-                fetch(`https://${process.env.WEBHOOK_URL}/render?chat_id=${chat_id}`, {
-                    method: "POST",
-                    headers: {
-                        'protection-secret': process.env.REQUEST_SECRET,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ url: pdfUrl }),
-                }).catch(err => console.error("Ошибка render:", err.message))
-            )
+    Promise.all(
+        pdfLinks.map(pdfUrl =>
+            fetch(`https://${process.env.WEBHOOK_URL}/render?chat_id=${chat_id}`, {
+                method: "POST",
+                headers: {
+                    'protection-secret': process.env.REQUEST_SECRET,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ url: pdfUrl }),
+            }).catch(err => console.error("Ошибка render:", err.message))
         )
     );
 }
@@ -195,7 +191,6 @@ async function SendRender(chat_id, res) {
         
         console.log(`Processing ${pdfLinks.length} PDF files`);
         
-        // Fire-and-forget POST на /api/render через waitUntil
         sendRequestRender(chat_id, pdfLinks);
         
         // Возвращаем ответ сразу
