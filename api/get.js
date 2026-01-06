@@ -191,7 +191,7 @@ async function SendRender(chat_id, res) {
         
         console.log(`Processing ${pdfLinks.length} PDF files`);
         
-        sendRequestRender(chat_id, pdfLinks);
+        await sendRequestRender(chat_id, pdfLinks);
         
         // Возвращаем ответ сразу
         return res.status(200).json({
