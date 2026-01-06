@@ -743,7 +743,7 @@ export default async function handler(req, res) {
 
   // Проверяем секретный токен для защиты от внешних вызовов
   if (req.headers['x-telegram-bot-api-secret-token'] !== process.env.WEBHOOK_SECRET) {
-    console.error('Получен не верный secret_token!')
+    console.error('Получен неверный secret_token!')
     return res.status(403).json({ error: 'Forbidden' });
   }
 

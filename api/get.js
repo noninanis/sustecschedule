@@ -194,7 +194,7 @@ async function SendRender(chat_id, res) {
         sendRequestRender(chat_id, pdfLinks);
         
         // Возвращаем ответ сразу
-        return res.status(200).json({ 
+        return res.status(200).json({
             success: true, 
             message: "PDF processing started",
             count: pdfLinks.length 
@@ -218,7 +218,7 @@ export default async function handler(req, res) {
   if (!chat_id) return res.status(400).send("Missing chat_id");
 
   try {
-      await SendRender(chat_id);
+      await SendRender(chat_id,res);
       return res.status(200).json({ message: "Запросы на рендеринг PDF отправлены" });
   } catch (err) {
       console.error(err);
