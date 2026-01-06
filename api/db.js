@@ -78,7 +78,7 @@ class Database {
   // === Админы ===
 
   async getAllAdmins() {
-    const res = await this.pool.query('UPDATE users SET admin = true WHERE id = $1', [userId]);
+    const res = await this.pool.query('SELECT * FROM users WHERE admin = true');
     return res.rows;
   }
 
