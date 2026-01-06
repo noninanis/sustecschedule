@@ -297,21 +297,21 @@ bot.command('admin_help', async (ctx) => {
 
 bot.command("get", async (ctx) => {
   const chat_id = ctx.message.chat.id;
-
-  setTimeout(async () => {
-    try {
-      await fetch(
-        `https://${process.env.WEBHOOK_URL}/get?chat_id=${chat_id}`,
-        {
-          headers: {'protection-secret': process.env.REQUEST_SECRET}
-        }
-      );
-    } catch (err) {
-      console.error("Ошибка вызова /api/get:", err.message);
-    }
-  }, 0);
-
+  
   await ctx.reply("📤 Начинаю отправку расписания...");
+  
+  try {
+    await fetch(
+      `https://${process.env.WEBHOOK_URL}/get?chat_id=${chat_id}`,
+      {
+        headers: {'protection-secret': process.env.REQUEST_SECRET},
+        signal: AbortSignal.timeout(8000) // Таймаут 8 секунд
+      }
+    );
+    
+  } catch (err) {
+    console.error("Ошибка:", err.message);
+  }
 });
 
 bot.on('my_chat_member', async (ctx) => {
