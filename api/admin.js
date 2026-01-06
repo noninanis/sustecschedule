@@ -57,18 +57,18 @@ class AdminManager {
       const redis = await this.getRedis();
       const result = await db.getAllAdmins();
       
-      if (result.rows.length > 0) {
+      if (result.length > 0) {
         const pipeline = redis.multi();
         
-        for (const user of result.rows) {
+        for (const user of result) {
           pipeline.sAdd('admin:users', user.id.toString());
           pipeline.setEx(`admin:${user.id}`, 86400, '1'); // TTL 24ч
         }
         
         await pipeline.exec();
-        console.log(`✅ Synced ${result.rows.length} admins to Redis`);
+        console.log(`✅ Synced ${result.length} admins to Redis`);
         
-        return result.rows.map(r => r.id.toString());
+        return result.map(r => r.id.toString());
       }
       
       return [];
