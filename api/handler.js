@@ -3,7 +3,7 @@ import { Telegraf, session } from "telegraf";
 import { checkRateLimit, isBanned } from './rate-limit.js';
 import { isAdmin, addAdmin, removeAdmin } from './admin.js';
 import db from './db.js';
-import * from './tools.js';
+import { parseUserInput, findUser, formatUserInfo, logAdminAction, getAdminLogs } from './tools.js';
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN_BOT);
 bot.use( session({ defaultSession: () => ({}) }) );
