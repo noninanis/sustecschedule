@@ -110,13 +110,11 @@ bot.command('admin_list', async (ctx) => {
     let message = '👑 *Список админов:*\n\n';
     
     adminsInfo.forEach((admin, index) => {
-      const date = new Date(admin.created_at).toLocaleDateString('ru-RU');
       const name = admin.first_name || 'Без имени';
       const username = admin.username ? `@${admin.username}` : 'нет username';
       
       message += `${index + 1}. ${name} (${username})\n`;
       message += `   ID: ${admin.id}\n`;
-      message += `   Добавлен: ${date}\n\n`;
     });
     
     message += `Всего: ${adminsInfo.length} админов`;

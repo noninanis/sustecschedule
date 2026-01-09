@@ -109,10 +109,9 @@ class Database {
 
   async getAdminInfo(admin_ids) {
     await this.pool.query(`
-      SELECT id, username, first_name, created_at 
+      SELECT id, username, first_name
       FROM users 
       WHERE id = ANY($1::bigint[])
-      ORDER BY created_at DESC
     `, [admin_ids]);
     return res.rows || null;
   }
