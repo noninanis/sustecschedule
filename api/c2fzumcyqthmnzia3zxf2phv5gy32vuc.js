@@ -8,18 +8,24 @@ export default async function handler(req, res) {
 
   try {
     // Получаем все группы из БД
-    const groups = await db.getAllGroups();
+    const groups = await db.getEnabledGroups();
 
-    console.log(`Найдено групп: ${groups.length}`);
+    console.log(`Найдено активных групп: ${groups.length}`);
+
+    if (groups.length === 0) {
+      console.log('❌ Нет активных групп для отправки');
+      return;
+    }
 
     // Для каждой группы вызываем SendRender
     for (const group of groups) {
-      console.log(`Отправка рендера в чат: ${group.id}`);
-      try {
-        await SendRender(group.id);
-      } catch (err) {
-        console.error(`Ошибка при отправке в чат ${group.id}:`, err.message || err);
-        // Можно продолжить, даже если одна группа упала
+      if(group.enabled==true){
+        console.log(`Отправка рендера в чат: ${group.id}`);
+        try {
+          await SendRender(group.id);
+        } catch (err) {
+          console.error(`Ошибка при отправке в чат ${group.id}:`, err.message || err);
+        }
       }
     }
 

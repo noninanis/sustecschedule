@@ -66,15 +66,9 @@ bot.command('admin_stats', async (ctx) => {
     const adminIds = await redis.sMembers('admin:users');
     
     // Статистика из БД
-    const dbStats = await db.query(`
-      SELECT 
-        COUNT(*) as total_users,
-        SUM(CASE WHEN admin = true THEN 1 ELSE 0 END) as total_admins,
-        SUM(CASE WHEN banned = true THEN 1 ELSE 0 END) as total_banned
-      FROM users
-    `);
-    
-    const stats = dbStats.rows[0];
+    const dbStats = await db.adminStats();
+
+    const stats = dbStats[0];
     
     // Формируем сообщение
     const message = `
@@ -114,16 +108,11 @@ bot.command('admin_list', async (ctx) => {
     }
     
     // Получаем информацию о админах из БД
-    const adminsInfo = await db.query(`
-      SELECT id, username, first_name, created_at 
-      FROM users 
-      WHERE id = ANY($1::bigint[])
-      ORDER BY created_at DESC
-    `, [adminIds.map(id => parseInt(id))]);
+    const adminsInfo = await db.getAdminInfo(adminIds.map(id => parseInt(id)));
     
     let message = '👑 *Список админов:*\n\n';
     
-    adminsInfo.rows.forEach((admin, index) => {
+    adminsInfo.forEach((admin, index) => {
       const date = new Date(admin.created_at).toLocaleDateString('ru-RU');
       const name = admin.first_name || 'Без имени';
       const username = admin.username ? `@${admin.username}` : 'нет username';
@@ -133,7 +122,7 @@ bot.command('admin_list', async (ctx) => {
       message += `   Добавлен: ${date}\n\n`;
     });
     
-    message += `Всего: ${adminsInfo.rows.length} админов`;
+    message += `Всего: ${adminsInfo.length} админов`;
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
     
@@ -168,22 +157,16 @@ bot.command('admin_add', async (ctx) => {
   
   try {
     // Проверяем, существует ли пользователь в БД
-    const userCheck = await db.query(
-      'SELECT id, username, first_name FROM users WHERE id = $1',
-      [targetId]
-    );
+    const userCheck = await db.getUserById(targetId);
     
-    if (userCheck.rows.length === 0) {
+    if (userCheck.length === 0) {
       return ctx.reply('❌ Пользователь не найден в базе данных');
     }
     
-    const user = userCheck.rows[0];
+    const user = userCheck[0];
     
     // 1. Добавляем в PostgreSQL
-    await db.query(
-      'UPDATE users SET admin = true WHERE id = $1',
-      [targetId]
-    );
+    await db.setAdminById(true,targetId);
     
     // 2. Добавляем в Redis
     await addAdmin(targetId);
@@ -235,19 +218,13 @@ bot.command('admin_remove', async (ctx) => {
   
   try {
     // Получаем информацию о пользователе
-    const userInfo = await db.query(
-      'SELECT username, first_name FROM users WHERE id = $1',
-      [targetId]
-    );
+    const userInfo = await db.getUserById(targetId);
     
-    const user = userInfo.rows[0] || {};
+    const user = userInfo[0] || {};
     const userName = user.first_name || user.username || targetId;
     
     // 1. Удаляем из PostgreSQL
-    await db.query(
-      'UPDATE users SET admin = false WHERE id = $1',
-      [targetId]
-    );
+    await db.setAdminById(false,targetId);
     
     // 2. Удаляем из Redis
     await removeAdmin(targetId);

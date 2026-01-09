@@ -75,6 +75,11 @@ class Database {
     const res = await this.pool.query('SELECT * FROM groups ORDER BY added_at DESC');
     return res.rows;
   }
+  async getEnabledGroups(){
+    const groups = await this.pool.query(
+      'SELECT id, name FROM groups WHERE enable = true AND deleted_at IS NULL');
+    return res.rows;
+  }
   // === Админы ===
 
   async getAllAdmins() {
@@ -89,6 +94,27 @@ class Database {
   async setAdminById(status,id) {
     const res = await this.pool.query('UPDATE users SET admin = $1 WHERE id = $2', [status, id]);
     return res.rows[0] || null;
+  }
+
+  async adminStats() {
+    const res = await this.pool.query(`
+      SELECT 
+        COUNT(*) as total_users,
+        SUM(CASE WHEN admin = true THEN 1 ELSE 0 END) as total_admins,
+        SUM(CASE WHEN banned = true THEN 1 ELSE 0 END) as total_banned
+      FROM users
+    `);
+    return res.rows || null;
+  }
+
+  async getAdminInfo(admin_ids) {
+    await this.pool.query(`
+      SELECT id, username, first_name, created_at 
+      FROM users 
+      WHERE id = ANY($1::bigint[])
+      ORDER BY created_at DESC
+    `, [admin_ids]);
+    return res.rows || null;
   }
   // === Утилиты ===
 
