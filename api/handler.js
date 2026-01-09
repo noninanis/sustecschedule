@@ -1,7 +1,7 @@
 // handler.js
 import { Telegraf, session } from "telegraf";
 import { checkRateLimit, isBanned } from './rate-limit.js';
-import { getStatusRedis, isAdmin, addAdmin, removeAdmin } from './admin.js';
+import { getStatusRedis, getAdmins, isAdmin, addAdmin, removeAdmin } from './admin.js';
 import db from './db.js';
 import { parseUserInput, findUser, formatUserInfo, logAdminAction, getAdminLogs } from './tools.js';
 
@@ -156,11 +156,11 @@ bot.command('admin_add', async (ctx) => {
     // Проверяем, существует ли пользователь в БД
     const userCheck = await db.getUserById(targetId);
     
-    if (userCheck.length === 0) {
+    if (userCheck === null) {
       return ctx.reply('❌ Пользователь не найден в базе данных');
     }
     
-    const user = userCheck[0];
+    const user = userCheck;
     
     // 1. Добавляем в PostgreSQL
     await db.setAdminById(true,targetId);
@@ -217,7 +217,7 @@ bot.command('admin_remove', async (ctx) => {
     // Получаем информацию о пользователе
     const userInfo = await db.getUserById(targetId);
     
-    const user = userInfo[0] || {};
+    const user = userInfo || {};
     const userName = user.first_name || user.username || targetId;
     
     // 1. Удаляем из PostgreSQL
@@ -247,26 +247,30 @@ bot.command('admin_help', async (ctx) => {
   }
   
   const helpMessage = `
-🛠️ *Админ-команды:*
+  🛠️ *Админ-команды:*
 
-📊 /admin_stats — статистика системы
-📋 /admin_list — список всех админов
-👑 /admin_add <id> — добавить админа
-⛔ /admin_remove <id> — удалить админа
-❓ /admin_help — эта справка
+  📊 /admin_stats — статистика системы
+  📋 /admin_list — список всех админов
+  👑 /admin_add <id> — добавить админа
+  ⛔ /admin_remove <id> — удалить админа
+  ❓ /admin_help — эта справка
 
-⚠️ *Внимание:*
-• ID должен быть числом
-• Нельзя удалить самого себя
-• Все изменения логируются
-• Redis кеш обновляется сразу
+  ⚠️ *Внимание:*
+  • ID должен быть числом
+  • Нельзя удалить самого себя
+  • Все изменения логируются
+  • Redis кеш обновляется сразу
 
-📝 *Примеры:*
-\`/admin_add 123456789\`
-\`/admin_remove 987654321\`
+  📝 *Примеры:*
+  \`/admin_add 123456789\`
+  \`/admin_remove 987654321\`
   `.trim();
-  
-  await ctx.reply(helpMessage, { parse_mode: 'Markdown' });
+
+  // Заменяем обратные кавычки на код-блоки
+  await ctx.reply(helpMessage.replace(/`/g, '`'), { 
+    parse_mode: 'MarkdownV2'
+  });
+
 });
 
 bot.command("get", async (ctx) => {
