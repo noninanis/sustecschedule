@@ -43,6 +43,11 @@ class Database {
     return res.rows;
   }
 
+  async getEnabledUsers() {
+    const res = await this.pool.query('SELECT * FROM users WHERE status=true ORDER BY added_at DESC');
+    return res.rows;
+  }
+
   async getUserById(id) {
     const res = await this.pool.query('SELECT * FROM users WHERE id = $1', [id]);
     return res.rows[0] || null;

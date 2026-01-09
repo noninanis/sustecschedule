@@ -9,6 +9,7 @@ export default async function handler(req, res) {
   try {
     // Получаем все группы из БД
     const groups = await db.getEnabledGroups();
+    const users = await db.getEnabledUsers();
 
     console.log(`Найдено активных групп: ${groups.length}`);
 
@@ -25,6 +26,22 @@ export default async function handler(req, res) {
           await SendRender(group.id);
         } catch (err) {
           console.error(`Ошибка при отправке в чат ${group.id}:`, err.message || err);
+        }
+      }
+    }
+    if (users.length === 0) {
+      console.log('❌ Нет активных пользователей для отправки');
+      return;
+    }
+
+    // Для каждого юзера вызываем SendRender
+    for (const user of users) {
+      if(user.status==true){
+        console.log(`Отправка рендера в чат: ${user.id}`);
+        try {
+          await SendRender(user.id);
+        } catch (err) {
+          console.error(`Ошибка при отправке в чат ${user.id}:`, err.message || err);
         }
       }
     }
