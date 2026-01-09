@@ -76,9 +76,6 @@ bot.command('admin_stats', async (ctx) => {
 👑 Админов: ${stats.total_admins || 0}
 🚫 Забанено: ${stats.total_banned || 0}
 
-🔄 Админов в Redis: ${adminIds.length}
-💾 Админов в кеше: ${getAdminCount()}
-
 🕐 Время сервера: ${new Date().toLocaleString('ru-RU')}
 ✅ Redis: ${await getStatusRedis() ? 'подключен' : 'ошибка'}
     `.trim();

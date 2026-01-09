@@ -76,7 +76,7 @@ class Database {
     return res.rows;
   }
   async getEnabledGroups(){
-    const groups = await this.pool.query(
+    const res = await this.pool.query(
       'SELECT id, name FROM groups WHERE enable = true AND deleted_at IS NULL');
     return res.rows;
   }
@@ -108,7 +108,7 @@ class Database {
   }
 
   async getAdminInfo(admin_ids) {
-    await this.pool.query(`
+    const res = await this.pool.query(`
       SELECT id, username, first_name
       FROM users 
       WHERE id = ANY($1::bigint[])
