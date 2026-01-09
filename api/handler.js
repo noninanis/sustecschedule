@@ -1,7 +1,7 @@
 // handler.js
 import { Telegraf, session } from "telegraf";
 import { checkRateLimit, isBanned } from './rate-limit.js';
-import { isAdmin, addAdmin, removeAdmin } from './admin.js';
+import { getStatusRedis, isAdmin, addAdmin, removeAdmin } from './admin.js';
 import db from './db.js';
 import { parseUserInput, findUser, formatUserInfo, logAdminAction, getAdminLogs } from './tools.js';
 
@@ -60,10 +60,8 @@ bot.command('admin_stats', async (ctx) => {
   }
   
   try {
-    const redis = await getRedis();
-    
     // Получаем всех админов из Redis
-    const adminIds = await redis.sMembers('admin:users');
+    const adminIds = await getAdmins();
     
     // Статистика из БД
     const dbStats = await db.adminStats();
@@ -82,7 +80,7 @@ bot.command('admin_stats', async (ctx) => {
 💾 Админов в кеше: ${getAdminCount()}
 
 🕐 Время сервера: ${new Date().toLocaleString('ru-RU')}
-✅ Redis: ${redis.isOpen ? 'подключен' : 'ошибка'}
+✅ Redis: ${await getStatusRedis() ? 'подключен' : 'ошибка'}
     `.trim();
     
     await ctx.reply(message, { parse_mode: 'Markdown' });
@@ -100,8 +98,7 @@ bot.command('admin_list', async (ctx) => {
   }
   
   try {
-    const redis = await getRedis();
-    const adminIds = await redis.sMembers('admin:users');
+    const adminIds = await getAdmins();
     
     if (adminIds.length === 0) {
       return ctx.reply('📭 Список админов пуст');

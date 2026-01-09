@@ -84,6 +84,17 @@ class AdminManager {
     adminIds.forEach(id => this.localCache.set(id, true));
     console.log(`✅ Admin cache updated: ${adminIds.length} admins`);
   }
+
+  async getAdmins() {
+    try {
+      const redis = await this.getRedis();
+      const adminIds = await redis.sMembers('admin:users');
+      return adminIds;
+    } catch (error) {
+      console.error('Error get admins:', error);
+      return null;
+    }
+  }
   
   // Основной метод проверки
   async isAdmin(userId) {
@@ -116,10 +127,6 @@ class AdminManager {
   // Добавление админа (вызывается при команде /admin_add)
   async addAdmin(userId) {
     try {
-      // 1. Обновляем БД
-      await db.setAdminById(userId,true);
-      
-      // 2. Обновляем Redis
       const redis = await this.getRedis();
       await redis.sAdd('admin:users', userId.toString());
       await redis.setEx(`admin:${userId}`, 86400, '1');
@@ -138,10 +145,6 @@ class AdminManager {
   // Удаление админа (вызывается при команде /admin_remove)
   async removeAdmin(userId) {
     try {
-      // 1. Обновляем БД
-      await db.setAdminById(userId,false);
-      
-      // 2. Обновляем Redis
       const redis = await this.getRedis();
       await redis.sRem('admin:users', userId.toString());
       await redis.del(`admin:${userId}`);
@@ -157,6 +160,16 @@ class AdminManager {
     }
   }
   
+  async StatusRedis() {
+    try {
+      const redis = await this.getRedis();
+      return redis.isOpen;
+    } catch (error) {
+      console.error('Error get status redis:', error);
+      throw error;
+    }
+  }
+
   // Принудительное обновление кеша (для тестов/cron)
   async forceReload() {
     this.localCache.clear();
@@ -173,6 +186,16 @@ export function getAdminManager() {
     adminManagerInstance = new AdminManager();
   }
   return adminManagerInstance;
+}
+
+export async function getAdmins() {
+  const manager = getAdminManager();
+  return await manager.getAdmins();
+}
+
+export async function getStatusRedis() {
+  const manager = getAdminManager();
+  return await manager.StatusRedis();
 }
 
 // Для удобства
