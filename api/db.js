@@ -82,7 +82,7 @@ class Database {
   }
   async getEnabledGroups(){
     const res = await this.pool.query(
-      'SELECT id, name FROM groups WHERE enable = true AND deleted_at IS NULL');
+      'SELECT id, title FROM groups WHERE enable = true');
     return res.rows;
   }
   // === Админы ===
